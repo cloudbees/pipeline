@@ -1,0 +1,56 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: finally-task-deps-example
+spec:
+  pipelineSpec:
+    tasks:
+    - name: normal-task1
+      taskSpec:
+        results:
+        - name: normalresult
+        steps:
+        - name: step1
+          image: alpine:3.19
+          script: |
+            echo hello1
+            echo -n hello1 > "$(results.normalresult.path)"
+    finally:
+    - name: finally-task1
+      taskSpec:
+        results:
+        - name: finalresult
+        steps:
+        - name: step1
+          image: alpine:3.19
+          script: |
+            echo hello2
+            echo -n hello2 > "$(results.finalresult.path)"
+    - name: finally-task2
+      taskSpec:
+        params:
+        - name: param1
+        - name: param2
+        steps:
+        - name: step1
+          image: alpine:3.19
+          script: |
+            echo hello
+            echo "PARAM1: $(params.param1)"
+            echo "PARAM2: $(params.param2)"
+      params:
+      - name: param1
+        value: $(tasks.finally-task1.results.finalresult)
+      - name: param2
+        # TODO: fix this: tekton implicitly derives a dependency to normal-task1 here but cross-DAG references are not supported.
+        # ERROR: PipelineRun default/finally-task-deps-example's Pipeline
+        #   DAG is invalid for finally clause: couldn't add link between finally-task2
+        #   and normal-task1: task finally-task2 depends on normal-task1 but normal-task1
+        #   wasn't present in Pipeline
+        #   value: $(tasks.normal-task1.results.normalresult)
+      runAfter:
+      #- normal-task1 (makes no difference)
+      - finally-task1
+
+# TODO: test when/conditional within finally tasks
+# TODO: test letting a finally task refer to a normal task's output - also in case the normal task didn't run

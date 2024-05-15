@@ -710,15 +710,19 @@ func validateTasksAndFinallySection(ps *PipelineSpec) *apis.FieldError {
 }
 
 func validateFinalTasks(tasks []PipelineTask, finalTasks []PipelineTask) (errs *apis.FieldError) {
-	for idx, f := range finalTasks {
-		if len(f.RunAfter) != 0 {
-			errs = errs.Also(apis.ErrInvalidValue(fmt.Sprintf("no runAfter allowed under spec.finally, final task %s has runAfter specified", f.Name), "").ViaFieldIndex("finally", idx))
-		}
-	}
-
 	ts := PipelineTaskList(tasks).Names()
 	fts := PipelineTaskList(finalTasks).Names()
 
+	for idx, f := range finalTasks {
+		for _, depTask := range f.RunAfter {
+			if !ts.Has(depTask) && !fts.Has(depTask) {
+				errs = errs.Also(apis.ErrInvalidValue(fmt.Sprintf("final task %s depends on unknown task %s", f.Name, depTask), "").ViaFieldIndex("finally", idx))
+			}
+		}
+	}
+
+	// TODO: allow using results from other tasks as well as using conditions.
+	// See https://github.com/tektoncd/pipeline/pull/4132/files
 	errs = errs.Also(validateTaskResultReferenceInFinallyTasks(finalTasks, ts, fts))
 
 	return errs
@@ -747,10 +751,7 @@ func validateResultsVariablesExpressionsInFinally(expressions []string, pipeline
 		resultRefs := NewResultRefs(expressions)
 		for _, resultRef := range resultRefs {
 			pt := resultRef.PipelineTask
-			if finalTasksNames.Has(pt) {
-				errs = errs.Also(apis.ErrInvalidValue(fmt.Sprintf("invalid task result reference, "+
-					"final task has task result reference from a final task %s", pt), fieldPath))
-			} else if !pipelineTasksNames.Has(resultRef.PipelineTask) {
+			if !pipelineTasksNames.Has(resultRef.PipelineTask) && !finalTasksNames.Has(resultRef.PipelineTask) {
 				errs = errs.Also(apis.ErrInvalidValue(fmt.Sprintf("invalid task result reference, "+
 					"final task has task result reference from a task %s which is not defined in the pipeline", pt), fieldPath))
 			}

@@ -414,21 +414,18 @@ func (facts *PipelineRunFacts) GetTaskNames() sets.String {
 
 // GetFinalTasks returns a list of final tasks which needs to be executed next
 // GetFinalTasks returns final tasks only when all DAG tasks have finished executing or have been skipped
-func (facts *PipelineRunFacts) GetFinalTasks() PipelineRunState {
+func (facts *PipelineRunFacts) GetFinalTasks() (PipelineRunState, error) {
 	tasks := PipelineRunState{}
-	finalCandidates := sets.NewString()
 	// check either pipeline has finished executing all DAG pipelineTasks,
 	// where "finished executing" means succeeded, failed, or skipped.
 	if facts.checkDAGTasksDone() {
-		// return list of tasks with all final tasks
-		for _, t := range facts.State {
-			if facts.isFinalTask(t.PipelineTask.Name) {
-				finalCandidates.Insert(t.PipelineTask.Name)
-			}
+		candidateTasks, err := dag.GetCandidateTasks(facts.FinalTasksGraph, facts.completedOrSkippedFinalTasks()...)
+		if err != nil {
+			return tasks, err
 		}
-		tasks = facts.State.getNextTasks(finalCandidates)
+		tasks = facts.State.getNextTasks(candidateTasks)
 	}
-	return tasks
+	return tasks, nil
 }
 
 // IsFinalTaskStarted returns true if all DAG pipelineTasks is finished and one or more final tasks have been created.
@@ -646,6 +643,20 @@ func (facts *PipelineRunFacts) completedOrSkippedDAGTasks() []string {
 	tasks := []string{}
 	for _, t := range facts.State {
 		if facts.isDAGTask(t.PipelineTask.Name) {
+			if t.isDone(facts) {
+				tasks = append(tasks, t.PipelineTask.Name)
+			}
+		}
+	}
+	return tasks
+}
+
+// completedOrSkippedFinalTasks returns a list of the names of all of the final PipelineTasks
+// in state which have completed or skipped
+func (facts *PipelineRunFacts) completedOrSkippedFinalTasks() []string {
+	tasks := []string{}
+	for _, t := range facts.State {
+		if facts.isFinalTask(t.PipelineTask.Name) {
 			if t.isDone(facts) {
 				tasks = append(tasks, t.PipelineTask.Name)
 			}

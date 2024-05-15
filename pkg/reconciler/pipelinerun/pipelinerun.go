@@ -466,7 +466,7 @@ func (c *Reconciler) reconcile(ctx context.Context, pr *v1.PipelineRun, getPipel
 	// if a task in PipelineRunState is final task or not
 	// the finally section is optional and might not exist
 	// dfinally holds an empty Graph in the absence of finally clause
-	dfinally, err := dag.Build(v1.PipelineTaskList(pipelineSpec.Finally), map[string][]string{})
+	dfinally, err := dag.Build(v1.PipelineTaskList(pipelineSpec.Finally), v1.PipelineTaskList(pipelineSpec.Finally).Deps())
 	if err != nil {
 		// This Run has failed, so we need to mark it as failed and stop reconciling it
 		pr.Status.MarkFailed(v1.PipelineRunReasonInvalidGraph.String(),
@@ -846,7 +846,11 @@ func (c *Reconciler) runNextSchedulableTask(ctx context.Context, pr *v1.Pipeline
 	}
 
 	// GetFinalTasks only returns final tasks when a DAG is complete
-	fNextRpts := pipelineRunFacts.GetFinalTasks()
+	fNextRpts, err := pipelineRunFacts.GetFinalTasks()
+	if err != nil {
+		logger.Errorf("Error getting potential next final tasks for valid pipelinerun %s: %v", pr.Name, err)
+		return controller.NewPermanentError(err)
+	}
 	if len(fNextRpts) != 0 {
 		// apply the runtime context just before creating taskRuns for final tasks in queue
 		resources.ApplyPipelineTaskStateContext(fNextRpts, pipelineRunFacts.GetPipelineTaskStatus())
